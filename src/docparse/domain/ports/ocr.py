@@ -19,6 +19,7 @@ class OcrLine:
 @dataclass(frozen=True)
 class OcrResult:
     lines: list[OcrLine] = field(default_factory=list)
+    engine: str = ""  # set by fallback chains to the engine that actually answered
 
     @property
     def text(self) -> str:

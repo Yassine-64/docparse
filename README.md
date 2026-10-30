@@ -51,9 +51,13 @@ flowchart LR
     C --> Q
 ```
 
-Every engine is optional. With no keys and no workers, docparse runs fully local (pdfplumber +
-Tesseract). Set a key or a worker URL and the container wires the adapter in; `/health` shows
-which engines are active.
+Every engine is optional and they chain. OCR order is **RunPod EasyOCR → HTTP EasyOCR worker →
+local Tesseract**: each one is tried only when the previous fails, per page, and the block's
+`provenance.source` names the engine that actually answered. Mistral OCR, when configured, handles
+mostly-scanned files whole and drops to the per-page chain if it errors. Layout detection follows
+the same chain (RunPod → worker) and degrades to "no layout" rather than failing the parse. With
+no keys and no workers, docparse runs fully local (pdfplumber + Tesseract). `/health` shows the
+active chain.
 
 ## Architecture
 
@@ -67,6 +71,7 @@ src/docparse/
 ├── application/            use cases, depends on domain only
 │   ├── dto/                ParseOptions, ParseResult
 │   ├── strategies/         PdfStrategy (routing above), PresentationStrategy
+│   ├── engines/            FallbackOcr, FallbackLayout: try engines in order
 │   ├── quality/            thresholds, rules (one function each), gate
 │   ├── use_cases/          ParseDocument, ChunkDocument, ExportResult
 │   └── jobs/               async jobs: Job, JobStore/CallbackNotifier ports, JobService

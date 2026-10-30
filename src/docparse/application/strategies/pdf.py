@@ -94,10 +94,19 @@ class PdfStrategy:
         targets = pages if options.ocr is OcrMode.FORCE else scanned
         mostly_scanned = len(targets) * 2 >= len(pages)
         if self.document_ocr is not None and mostly_scanned:
-            return await self._whole_document_ocr(path, pages), self.document_ocr.name
+            try:
+                return await self._whole_document_ocr(path, pages), self.document_ocr.name
+            except Exception as e:  # noqa: BLE001 - fall back to per-page OCR
+                log.warning(
+                    "%s failed on %s (%s: %s); falling back to per-page OCR",
+                    self.document_ocr.name,
+                    path.name,
+                    type(e).__name__,
+                    e,
+                )
         if self.ocr is not None:
-            await asyncio.gather(*(self._ocr_page(path, p, options) for p in targets))
-            return pages, self.ocr.name
+            used = await asyncio.gather(*(self._ocr_page(path, p, options) for p in targets))
+            return pages, " + ".join(sorted({u for u in used if u})) or self.ocr.name
         log.warning("%s: %d scanned page(s) but no OCR engine configured", path.name, len(scanned))
         return pages, None
 
@@ -117,17 +126,25 @@ class PdfStrategy:
             self.renderer.render, path, page.number, options.render_scale
         )
 
-    async def _ocr_page(self, path: Path, page: Page, options: ParseOptions) -> None:
+    async def _ocr_page(self, path: Path, page: Page, options: ParseOptions) -> str:
         assert self.ocr is not None
         async with self._sem:
             result = await self.ocr.recognize(await self._render(path, page, options))
-        page.blocks = group_lines(result.lines, page=page.number, source=self.ocr.name)
+        engine = result.engine or self.ocr.name
+        page.blocks = group_lines(result.lines, page=page.number, source=engine)
+        return engine
 
     async def _enrich_layout(self, path: Path, page: Page, options: ParseOptions) -> None:
         assert self.layout is not None
         async with self._sem:
             image = await self._render(path, page, options)
-            detections = await self.layout.detect(image)
+            try:
+                detections = await self.layout.detect(image)
+            except Exception as e:  # noqa: BLE001 - layout is enrichment, never a reason to fail
+                log.warning(
+                    "layout failed on page %d (%s: %s); skipped", page.number, type(e).__name__, e
+                )
+                return
         for det in detections:
             if det.label == "table" and self._has_native_table_at(page, det.bbox):
                 continue

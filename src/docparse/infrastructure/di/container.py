@@ -7,6 +7,7 @@ import shutil
 from dataclasses import dataclass
 from functools import cached_property
 
+from docparse.application.engines import FallbackLayout, FallbackOcr
 from docparse.application.jobs import JobService
 from docparse.application.quality import QualityGate
 from docparse.application.strategies import PdfStrategy, PresentationStrategy, Strategy
@@ -40,25 +41,37 @@ class Container:
     # ---- optional engines: None when not configured -------------------------------------
     @cached_property
     def ocr(self) -> OcrEngine | None:
+        """RunPod → HTTP worker → local Tesseract, each used only if the previous one fails."""
         s = self.settings
+        chain: list[OcrEngine] = []
         if s.runpod_api_key and s.runpod_ocr_endpoint:
             from docparse.infrastructure.adapters.ocr.easyocr import EasyOcr
 
-            return EasyOcr(RunpodTransport(s.runpod_api_key, s.runpod_ocr_endpoint))
+            chain.append(
+                EasyOcr(
+                    RunpodTransport(s.runpod_api_key, s.runpod_ocr_endpoint), name="easyocr-runpod"
+                )
+            )
         if s.ocr_worker_url:
             from docparse.infrastructure.adapters.ocr.easyocr import EasyOcr
 
-            return EasyOcr(WorkerTransport(s.ocr_worker_url.rstrip("/") + "/ocr"))
+            chain.append(
+                EasyOcr(
+                    WorkerTransport(s.ocr_worker_url.rstrip("/") + "/ocr"), name="easyocr-worker"
+                )
+            )
         if shutil.which(s.tesseract_cmd or "tesseract"):
             try:
                 from docparse.infrastructure.adapters.ocr.tesseract import TesseractOcr
 
-                return TesseractOcr(langs=s.tesseract_langs, cmd=s.tesseract_cmd)
+                chain.append(TesseractOcr(langs=s.tesseract_langs, cmd=s.tesseract_cmd))
             except ImportError:
                 log.warning(
                     "tesseract found but pytesseract missing: pip install 'docparse[tesseract]'"
                 )
-        return None
+        if not chain:
+            return None
+        return chain[0] if len(chain) == 1 else FallbackOcr(chain)
 
     @cached_property
     def document_ocr(self) -> DocumentOcr | None:
@@ -71,11 +84,23 @@ class Container:
     @cached_property
     def layout(self) -> LayoutDetector | None:
         s = self.settings
+        chain: list[LayoutDetector] = []
         if s.runpod_api_key and s.runpod_layout_endpoint:
-            return TfidLayout(RunpodTransport(s.runpod_api_key, s.runpod_layout_endpoint))
+            chain.append(
+                TfidLayout(
+                    RunpodTransport(s.runpod_api_key, s.runpod_layout_endpoint), name="tf-id-runpod"
+                )
+            )
         if s.layout_worker_url:
-            return TfidLayout(WorkerTransport(s.layout_worker_url.rstrip("/") + "/detect"))
-        return None
+            chain.append(
+                TfidLayout(
+                    WorkerTransport(s.layout_worker_url.rstrip("/") + "/detect"),
+                    name="tf-id-worker",
+                )
+            )
+        if not chain:
+            return None
+        return chain[0] if len(chain) == 1 else FallbackLayout(chain)
 
     @cached_property
     def vision(self) -> VisionDescriber | None:

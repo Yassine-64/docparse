@@ -19,12 +19,15 @@ _LABELS = {
 
 
 class TfidLayout:
-    name = "tf-id"
-
     def __init__(
-        self, transport: Transport, min_rel_w: float = 0.02, min_rel_h: float = 0.015
+        self,
+        transport: Transport,
+        name: str = "tf-id",
+        min_rel_w: float = 0.02,
+        min_rel_h: float = 0.015,
     ) -> None:
         self.transport = transport
+        self.name = name
         self.min_rel_w, self.min_rel_h = min_rel_w, min_rel_h
 
     async def detect(self, image: Image.Image) -> list[Detection]:

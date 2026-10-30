@@ -10,10 +10,9 @@ from docparse.infrastructure.http.transports import Transport, image_payload
 
 
 class EasyOcr:
-    name = "easyocr"
-
-    def __init__(self, transport: Transport) -> None:
+    def __init__(self, transport: Transport, name: str = "easyocr") -> None:
         self.transport = transport
+        self.name = name
 
     async def recognize(self, image: Image.Image) -> OcrResult:
         data = await self.transport.call(image_payload(image))
