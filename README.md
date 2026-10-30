@@ -1,9 +1,11 @@
 # docparse
 
 Documents in, **structured blocks with provenance** out. PDF, DOCX, XLSX, CSV and PPTX become
-pages of typed blocks (heading, text, list item, table, figure), each carrying the page number,
-a normalized bounding box, the engine that produced it and its confidence. From that one model
-docparse emits Markdown, JSON, RAG chunks and a quality report.
+pages of typed blocks (heading, text, list item, table, figure). Every block names the engine that
+produced it, its page and, where the engine reports one, its confidence. Spatial provenance, a
+normalized bounding box, is present when the engine can give it: the PDF text layer, Tesseract,
+EasyOCR and the layout detector do; Mistral OCR and the Office formats give page or sheet only. From
+that one model docparse emits Markdown, JSON, RAG chunks and a quality report.
 
 Carved out of a production ingestion pipeline (OCR + layout workers on RunPod, Mistral OCR,
 validators feeding a RAG stack) and rebuilt with a clean architecture: domain → application →
@@ -21,7 +23,7 @@ $ uv run docparse parse report.pdf scan.pdf contract.docx --out out
 | output | content |
 |---|---|
 | `<name>.md` | Markdown with `<!-- page N -->` markers, headings, lists, GFM tables, figure descriptions |
-| `<name>.json` | the full `Document`: pages → blocks → `provenance {page, bbox, source, confidence}` |
+| `<name>.json` | the full `Document`: pages → blocks → `provenance {page, bbox?, source, confidence?}` (bbox and confidence are null when the engine has none) |
 | `<name>.chunks.jsonl` | section-aware chunks for retrieval, each with `section_path` and every source provenance |
 | `<name>.quality.md` | quality gate verdict and issues (scanned pages without OCR, low confidence, chart-like tables…) |
 | `<name>.refined.md` | optional LLM-restructured version (`--refine`) |
@@ -153,7 +155,7 @@ HTTP API (`Authorization: Bearer $DOCPARSE_API_KEY` when configured):
 | `POST /v1/parse` | full document + report + timings |
 | `POST /v1/parse/markdown` | markdown only |
 | `POST /v1/parse/chunks?max_chars=` | RAG chunks with provenance |
-| `POST /v1/jobs?callback_url=` → `GET /v1/jobs/{id}` | async processing, optional `PUT` callback when done |
+| `POST /v1/jobs?callback_url=` → `GET /v1/jobs/{id}` | async processing, optional `PUT` callback when done. Callbacks must be https to a public address (no loopback, private, link-local or metadata IPs, checked after DNS and before every attempt, no redirects); `DOCPARSE_CALLBACK_ALLOW_PRIVATE=true` relaxes this for local development |
 | `GET /health` | version, supported suffixes, active engines |
 
 ```bash

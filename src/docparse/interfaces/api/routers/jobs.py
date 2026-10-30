@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import tempfile
 from pathlib import Path
@@ -10,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 
 from docparse.application.dto import ParseOptions
 from docparse.application.jobs import Job, JobService
+from docparse.infrastructure.http.callback import UnsafeCallbackUrl, check_callback_url
 
 from ..dependencies import AuthDep, ContainerDep, OptionsDep, UploadDep
 from ..schemas import JobResponse, JobSubmitted
@@ -34,6 +36,12 @@ async def submit(
     tasks: BackgroundTasks,
     callback_url: str | None = None,
 ) -> JobSubmitted:
+    if callback_url:
+        allow = container.settings.callback_allow_private
+        try:
+            await asyncio.to_thread(check_callback_url, callback_url, allow)
+        except UnsafeCallbackUrl as e:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
     # the request's temp dir disappears on return; keep our own copy for the background task
     keep = Path(tempfile.mkdtemp(prefix="docparse-job-")) / path.name
     shutil.copyfile(path, keep)

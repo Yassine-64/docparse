@@ -47,3 +47,10 @@ def test_job_flow(client, text_pdf):
         time.sleep(0.1)
     assert body["status"] == "done" and body["report"]["passed"] and "Quarterly" in body["markdown"]
     assert client.get("/v1/jobs/nope", headers=AUTH).status_code == 404
+
+
+def test_job_rejects_ssrf_callback(client, text_pdf):
+    files = {"file": ("report.pdf", text_pdf.read_bytes(), "application/pdf")}
+    url = "/v1/jobs?callback_url=https://169.254.169.254/latest/meta-data/"
+    r = client.post(url, files=files, headers=AUTH)
+    assert r.status_code == 422 and "non-public" in r.json()["detail"]

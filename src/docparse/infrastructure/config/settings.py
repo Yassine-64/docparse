@@ -36,4 +36,8 @@ class Settings(BaseSettings):
 
     api_key: str | None = Field(default=None, description="Bearer token for the HTTP API when set")
     max_upload_mb: int = 50
+    callback_allow_private: bool = Field(
+        default=False,
+        description="allow http:// and private/loopback callback targets; local development only",
+    )
     log_level: str = "INFO"

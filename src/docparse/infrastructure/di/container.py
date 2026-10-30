@@ -156,7 +156,8 @@ class Container:
 
     @cached_property
     def job_service(self) -> JobService:
-        return JobService(self.parse_document, InMemoryJobStore(), HttpCallbackNotifier())
+        notifier = HttpCallbackNotifier(allow_private=self.settings.callback_allow_private)
+        return JobService(self.parse_document, InMemoryJobStore(), notifier)
 
 
 def build_container(settings: Settings | None = None) -> Container:
