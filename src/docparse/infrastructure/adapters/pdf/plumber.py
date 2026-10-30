@@ -14,6 +14,13 @@ from docparse.domain.services import group_lines
 
 SOURCE = "pdfplumber"
 _BREAK = OcrLine(text="", bbox=None, confidence=None)
+_MARK = "\x00"  # heading placeholder inside the line buffer; never present in cleaned text
+
+
+def _clean(text: str) -> str:
+    """PDF text layers carry NULs (checkbox glyphs in SEC filings) and other C0 controls. They are
+    not text, Postgres rejects NUL in a string, and NUL is our heading marker. Drop them here."""
+    return "".join(ch for ch in text if ch >= " " or ch in "\t").strip()
 
 
 class PdfplumberText:
@@ -36,7 +43,7 @@ class PdfplumberText:
         buffered: list[OcrLine] = []
         headings: dict[int, Block] = {}
         for ln in lines:
-            text = ln["text"].strip()
+            text = _clean(ln["text"])
             bbox = BBox.from_absolute(ln["x0"], ln["top"], ln["x1"], ln["bottom"], w, h)
             if not text or any(tb.contains_center(bbox) for tb in table_boxes):
                 continue
@@ -50,13 +57,14 @@ class PdfplumberText:
                     level=_level(size, body_size),
                     provenance=Provenance(page=number, bbox=bbox, source=SOURCE),
                 )
-                buffered += [_BREAK, OcrLine(text=f"\x00{key}", bbox=bbox, confidence=None), _BREAK]
+                marker = OcrLine(text=f"{_MARK}{key}", bbox=bbox, confidence=None)
+                buffered += [_BREAK, marker, _BREAK]
             else:
                 buffered.append(OcrLine(text=text, bbox=bbox, confidence=None))
 
         for block in group_lines(buffered, page=number, source=SOURCE):
             page.blocks.append(
-                headings[int(block.text[1:])] if block.text.startswith("\x00") else block
+                headings[int(block.text[1:])] if block.text.startswith(_MARK) else block
             )
         page.sort_blocks()
         return page
@@ -79,7 +87,7 @@ class PdfplumberText:
     def _tables(p: Any, page: Page, w: float, h: float) -> list[BBox]:
         boxes: list[BBox] = []
         for t in p.find_tables():
-            rows = [[(c or "").strip() for c in row] for row in t.extract()]
+            rows = [[_clean(c or "") for c in row] for row in t.extract()]
             rows = [r for r in rows if any(r)]
             if not rows:
                 continue
