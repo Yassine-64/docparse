@@ -31,24 +31,42 @@ Bounding boxes are normalized (0–1 from the top-left), so a citation stays val
 ## Routing
 
 ```mermaid
-flowchart LR
-    F[file] -->|.pdf| P[PdfStrategy]
-    F -->|.pptx| L[LibreOffice → PDF] --> P
-    F -->|.docx| D[DocxParser]
-    F -->|.xlsx| X[XlsxParser]
-    F -->|.csv| C[CsvParser]
-    P --> T[text layer<br/>pdfplumber]
-    T -->|page has text| B[blocks]
-    T -->|page scanned| O{OCR}
-    O -->|most pages scanned<br/>+ Mistral key| M[Mistral OCR<br/>whole file]
-    O -->|else| E[Tesseract / EasyOCR worker<br/>per page]
-    M --> B
-    E --> B
-    B -->|--layout| Y[TF-ID layout<br/>tables, figures] -->|--vision| V[vision model<br/>describe / read table] --> B
-    B --> Q[quality gate] --> R[refiner<br/>optional LLM] --> OUT[md · json · chunks · report]
-    D --> Q
-    X --> Q
-    C --> Q
+flowchart TB
+    subgraph in["Input"]
+        direction LR
+        PDF["pdf"] ~~~ PPT["ppt / pptx"] ~~~ DOCX["docx"] ~~~ XLS["xlsx / csv"]
+    end
+
+    subgraph pdfpath["PdfStrategy"]
+        direction TB
+        TL["text layer<br/>pdfplumber: lines, bboxes, ruled tables"]
+        TL --> SC{"page has text?"}
+        SC -- yes --> BL["blocks"]
+        SC -- "no (scanned)" --> OCR{"OCR routing"}
+        OCR -- "most pages scanned<br/>+ Mistral key" --> MI["Mistral OCR<br/>whole file"]
+        OCR -- else --> CHAIN["fallback chain<br/>RunPod EasyOCR → worker → Tesseract"]
+        MI --> BL
+        CHAIN --> BL
+        BL -- "--layout" --> LAY["TF-ID layout<br/>tables · figures"] -- "--vision" --> VIS["vision model<br/>describe · read table"] --> BL
+    end
+
+    subgraph office["Office parsers"]
+        direction LR
+        D["DocxParser"] ~~~ X["XlsxParser<br/>merged cells"] ~~~ C["CsvParser<br/>sniffed delimiter"]
+    end
+
+    PPT --> LO["LibreOffice → pdf"] --> TL
+    PDF --> TL
+    DOCX --> D
+    XLS --> X
+    XLS --> C
+
+    BL --> QG["quality gate<br/>6 rules, thresholds via env"]
+    D --> QG
+    X --> QG
+    C --> QG
+    QG --> REF["refiner<br/>optional LLM restructuring"] --> OUTS["markdown · json · chunks.jsonl · quality.md"]
+    QG --> OUTS
 ```
 
 Every engine is optional and they chain. OCR order is **RunPod EasyOCR → HTTP EasyOCR worker →
