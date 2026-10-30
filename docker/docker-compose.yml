@@ -1,0 +1,23 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports: ["8000:8000"]
+    env_file: [../.env]
+    environment:
+      DOCPARSE_OCR_WORKER_URL: ${DOCPARSE_OCR_WORKER_URL:-}
+      DOCPARSE_LAYOUT_WORKER_URL: ${DOCPARSE_LAYOUT_WORKER_URL:-}
+    volumes: ["../out:/app/out"]
+
+  easyocr:
+    build: ../workers/easyocr
+    profiles: ["gpu"]
+    ports: ["8001:8001"]
+    deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
+
+  tfid:
+    build: ../workers/tfid
+    profiles: ["gpu"]
+    ports: ["8002:8002"]
+    deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
