@@ -205,4 +205,4 @@ files; the API through `TestClient`, including the job flow.
 - [ ] persistent job store (Redis) for multi-replica deployments
 - [ ] Docling / Marker as alternative text-layer engines behind the same port
 
-MIT.
+[MIT](LICENSE).
